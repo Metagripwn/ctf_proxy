@@ -197,7 +197,7 @@ def configure_proxy():
     for service in services_dict:
         for container in services_dict[service]["containers"]:
             for port in services_dict[service]["containers"][container]["listen_port"]:
-                ports.append(f"{port}:{port}")
+                ports.append(f"0.0.0.0:{port}:{port}")
     # ymlfile["services"]["proxy"]["ports"] = ports
     ymlfile["services"]["nginx"]["ports"] = ports
     with open("./ctf_proxy/docker-compose.yml", "w") as fs:
