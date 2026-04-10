@@ -187,7 +187,7 @@ def configure_proxy():
     """
     # Download ctf_proxy
     if not Path("./ctf_proxy").exists():
-        os.system("git clone https://github.com/ByteLeMani/ctf_proxy.git")
+        os.system("git clone https://github.com/Metagripwn/ctf_proxy.git")
 
     with open("./ctf_proxy/docker-compose.yml", "r") as file:
         ymlfile = yaml.load(file)
