@@ -2,11 +2,12 @@ from src.stream import Stream, TCPStream, HTTPStream
 # from src.db_manager import DBManager
 
 class Module():
-    
-    # INFO: uncomment these functions to enable them
 
-    # HTTP Example
-    
+    # INFO: uncomment these functions to enable them
+    # This module filters CLIENT → SERVER traffic (incoming requests)
+
+    # HTTP Example - Filter malicious requests
+
     # def username(self, stream: HTTPStream):
     #     """
     #     block usernames longer than 10 characters for register endpoint
@@ -19,7 +20,12 @@ class Module():
     #     else:
     #         return False
 
-    # TCP Example
+    # def curl(self, stream: HTTPStream):
+    #     """block curl user-agent"""
+    #     message = stream.current_http_message
+    #     return "curl" in message.headers.get("user-agent", "").lower()
+
+    # TCP Example - Filter malicious input
 
     # def password(self, stream: TCPStream):
     #     """block passwords longer than 10 characters"""

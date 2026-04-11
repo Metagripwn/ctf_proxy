@@ -5,7 +5,8 @@ import shutil
 
 
 def generate_module_files(service_names, base_directory):
-    template_path = os.path.join(base_directory, "template.py")
+    template_in_path = os.path.join(base_directory, "template_in.py")
+    template_out_path = os.path.join(base_directory, "template_out.py")
     for service_name in service_names:
         service_path = os.path.join(base_directory, service_name)
         try:
@@ -16,10 +17,10 @@ def generate_module_files(service_names, base_directory):
         in_module_path = os.path.join(service_path, service_name + "_in.py")
         out_module_path = os.path.join(service_path, service_name + "_out.py")
         if not os.path.isfile(in_module_path):
-            shutil.copy(template_path, in_module_path)
+            shutil.copy(template_in_path, in_module_path)
             os.chmod(in_module_path, 0o777)
         if not os.path.isfile(out_module_path):
-            shutil.copy(template_path, out_module_path)
+            shutil.copy(template_out_path, out_module_path)
             os.chmod(out_module_path, 0o777)
 
 
