@@ -34,6 +34,7 @@
           "interval": 2
       },
       "max_stored_messages": 10,
-      "max_message_size": 65535
+      "max_message_size": 65535,
+      "checker_rtt_threshold_us": null
   }
 }

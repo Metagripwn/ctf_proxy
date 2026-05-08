@@ -13,6 +13,9 @@ class Stream():
         self.current_message = b""
         self.previous_messages = deque(maxlen=max_stored_messages)
         self._max_message_size = max_message_size
+        self.handshake_rtt_us: int | None = None
+        self.client_rtt_us: int | None = None
+        self.is_likely_checker: bool | None = None
 
     def set_current_message(self, data: bytes):
         pass

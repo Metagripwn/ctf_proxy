@@ -13,6 +13,7 @@ import src.constants as constants
 import os
 import src.utils as utils
 import src.ssl_utils as ssl_utils
+import src.rtt as rtt
 
 def get_address_family(host):
     try:
@@ -94,9 +95,23 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
     # This loop ends when no more data is received on either the local or the
     # remote socket
     if service.http:
-        stream = HTTPStream(global_config["max_stored_messages"], global_config["max_message_size"]) 
+        stream = HTTPStream(global_config["max_stored_messages"], global_config["max_message_size"])
     else:
         stream = TCPStream(global_config["max_stored_messages"], global_config["max_message_size"])
+
+    checker_threshold_us = global_config.get("checker_rtt_threshold_us")
+    calibration_mode = checker_threshold_us is None
+    handshake_rtt = rtt.read_client_rtt_us(local_socket)
+    if handshake_rtt is not None:
+        stream.handshake_rtt_us = handshake_rtt
+        stream.client_rtt_us = handshake_rtt
+        if checker_threshold_us is not None:
+            stream.is_likely_checker = handshake_rtt < checker_threshold_us
+        line = f"[rtt] {service.name} {local_socket.getpeername()[0]} handshake={handshake_rtt}us checker={stream.is_likely_checker}"
+        if calibration_mode:
+            print(line)
+        else:
+            utils.vprint(line, global_config["verbose"])
 
     connection_open = True
     while connection_open:
@@ -152,6 +167,12 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                     local_socket.close()
                     connection_open = False
                     break
+
+                current_rtt = rtt.read_client_rtt_us(local_socket)
+                if current_rtt is not None:
+                    stream.client_rtt_us = current_rtt
+                    if stream.is_likely_checker is None and checker_threshold_us is not None:
+                        stream.is_likely_checker = current_rtt < checker_threshold_us
 
                 utils.vprint(b'> > > in\n' + stream.current_message, global_config["verbose"])
                 attack = utils.filter_packet(stream, watchdog_handler.in_module)
