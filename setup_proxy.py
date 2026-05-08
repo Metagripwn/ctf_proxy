@@ -156,6 +156,22 @@ def edit_services():
                 else:
                     ymlfile["services"][container]["hostname"] = hostname
 
+                # If this service has its own networks list, ensure it joins
+                # `default` too — that's how it gets onto ctf_network without
+                # losing whatever networks it was already attached to.
+                svc = ymlfile["services"][container]
+                if "networks" in svc:
+                    if isinstance(svc["networks"], list):
+                        if "default" not in svc["networks"]:
+                            svc["networks"].append("default")
+                    elif isinstance(svc["networks"], dict):
+                        if "default" not in svc["networks"]:
+                            svc["networks"]["default"] = None
+                    else:
+                        print(
+                            f"[!] Warning: service {service}_{container} has an unexpected networks value; review manually."
+                        )
+
             except Exception as e:
                 json.dump(ymlfile, sys.stdout, indent=2)
                 print(f"\n{container = }")
@@ -163,21 +179,28 @@ def edit_services():
 
             # TODO: Add restart: always
 
-            # add external network
-            net = {"default": {"name": "ctf_network", "external": True}}
-            if "networks" in ymlfile:
-                if "default" not in ymlfile["networks"]:
-                    ymlfile["networks"].append(net)
-                else:
+        # Add external ctf_network as the file's `default` network — once per
+        # compose file, not per container. Services with no explicit networks
+        # join `default` automatically; those with explicit networks were
+        # patched above to also include `default`.
+        net = {"name": "ctf_network", "external": True}
+        if "networks" in ymlfile:
+            if "default" not in ymlfile["networks"]:
+                ymlfile["networks"]["default"] = net
+            else:
+                existing = ymlfile["networks"]["default"]
+                if not (isinstance(existing, dict)
+                        and existing.get("name") == "ctf_network"
+                        and existing.get("external")):
                     print(
                         f"[!] Error: service {service} already has a default network. Skipping this step, review it manually before restarting."
                     )
-            else:
-                ymlfile["networks"] = net
+        else:
+            ymlfile["networks"] = {"default": net}
 
-            # write file
-            with open(file, "w") as fs:
-                yaml.dump(ymlfile, fs)
+        # write file
+        with open(file, "w") as fs:
+            yaml.dump(ymlfile, fs)
 
 
 def configure_proxy():
