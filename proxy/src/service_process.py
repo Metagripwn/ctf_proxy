@@ -99,6 +99,7 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
         stream = TCPStream(global_config["max_stored_messages"], global_config["max_message_size"])
 
     checker_threshold_us = global_config.get("checker_rtt_threshold_us")
+    print(f"[rtt-debug] {service.name} new connection, threshold={checker_threshold_us!r}")
 
     connection_open = True
     while connection_open:
@@ -159,7 +160,17 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                     gap_us = int((time.monotonic() - stream.last_response_sent_at) * 1_000_000)
                     prev_min = stream.min_rtt_us
                     prev_label = stream.is_likely_checker
+                    print(
+                        f"[rtt-debug] {service.name} {peer[0]} pre-record "
+                        f"gap={gap_us}us prev_min={prev_min} prev_label={prev_label!r} "
+                        f"threshold={checker_threshold_us!r}"
+                    )
                     stream.record_rtt_sample(gap_us, checker_threshold_us)
+                    print(
+                        f"[rtt-debug] {service.name} {peer[0]} post-record "
+                        f"new_min={stream.min_rtt_us} new_label={stream.is_likely_checker!r} "
+                        f"label_changed={prev_label != stream.is_likely_checker}"
+                    )
                     new_min_hit = prev_min is None or gap_us < prev_min
                     label_changed = prev_label != stream.is_likely_checker
                     if new_min_hit or label_changed:
