@@ -99,7 +99,6 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
         stream = TCPStream(global_config["max_stored_messages"], global_config["max_message_size"])
 
     checker_threshold_us = global_config.get("checker_rtt_threshold_us")
-    calibration_mode = checker_threshold_us is None
 
     connection_open = True
     while connection_open:
@@ -160,7 +159,7 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                     gap_us = int((time.monotonic() - stream.last_response_sent_at) * 1_000_000)
                     prev_min = stream.min_rtt_us
                     stream.record_rtt_sample(gap_us, checker_threshold_us)
-                    if calibration_mode and (prev_min is None or gap_us < prev_min):
+                    if prev_min is None or gap_us < prev_min:
                         ua = "-"
                         if service.http and getattr(stream, "current_http_message", None) is not None:
                             ua = stream.current_http_message.headers.get("user-agent", "-") or "-"
