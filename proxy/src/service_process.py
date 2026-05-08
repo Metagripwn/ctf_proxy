@@ -13,7 +13,6 @@ import src.constants as constants
 import os
 import src.utils as utils
 import src.ssl_utils as ssl_utils
-import src.rtt as rtt
 
 def get_address_family(host):
     try:
@@ -101,13 +100,6 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
 
     checker_threshold_us = global_config.get("checker_rtt_threshold_us")
     calibration_mode = checker_threshold_us is None
-    handshake_rtt = rtt.read_client_rtt_us(local_socket)
-    if handshake_rtt is not None:
-        stream.handshake_rtt_us = handshake_rtt
-        stream.client_rtt_us = handshake_rtt
-        if checker_threshold_us is not None:
-            stream.is_likely_checker = handshake_rtt < checker_threshold_us
-    rtt_logged = False
 
     connection_open = True
     while connection_open:
@@ -164,29 +156,20 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                     connection_open = False
                     break
 
-                current_rtt = rtt.read_client_rtt_us(local_socket)
-                if current_rtt is not None:
-                    stream.client_rtt_us = current_rtt
-                    if stream.handshake_rtt_us is None:
-                        stream.handshake_rtt_us = current_rtt
-                    if stream.is_likely_checker is None and checker_threshold_us is not None:
-                        stream.is_likely_checker = current_rtt < checker_threshold_us
-
-                if not rtt_logged:
-                    rtt_logged = True
-                    ua = "-"
-                    if service.http and getattr(stream, "current_http_message", None) is not None:
-                        ua = stream.current_http_message.headers.get("user-agent", "-") or "-"
-                    line = (
-                        f"[rtt] {service.name} {peer[0]} "
-                        f"handshake={stream.handshake_rtt_us}us "
-                        f"checker={stream.is_likely_checker} "
-                        f"ua={ua!r}"
-                    )
-                    if calibration_mode:
-                        print(line)
-                    else:
-                        utils.vprint(line, global_config["verbose"])
+                if stream.last_response_sent_at is not None:
+                    gap_us = int((time.monotonic() - stream.last_response_sent_at) * 1_000_000)
+                    prev_min = stream.min_rtt_us
+                    stream.record_rtt_sample(gap_us, checker_threshold_us)
+                    if calibration_mode and (prev_min is None or gap_us < prev_min):
+                        ua = "-"
+                        if service.http and getattr(stream, "current_http_message", None) is not None:
+                            ua = stream.current_http_message.headers.get("user-agent", "-") or "-"
+                        print(
+                            f"[rtt] {service.name} {peer[0]} "
+                            f"gap={gap_us}us min={stream.min_rtt_us}us "
+                            f"samples={len(stream.rtt_samples)} "
+                            f"checker={stream.is_likely_checker} ua={ua!r}"
+                        )
 
                 utils.vprint(b'> > > in\n' + stream.current_message, global_config["verbose"])
                 attack = utils.filter_packet(stream, watchdog_handler.in_module)
@@ -205,6 +188,7 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                 attack = utils.filter_packet(stream, watchdog_handler.out_module)
                 if not attack:
                     local_socket.send(stream.current_message)
+                    stream.last_response_sent_at = time.monotonic()
 
             if attack:
                 utils.vprint(f"Connection {peer[0]},{peer[1]} BLOCKED", global_config["verbose"])

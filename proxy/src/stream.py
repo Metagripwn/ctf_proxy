@@ -13,9 +13,20 @@ class Stream():
         self.current_message = b""
         self.previous_messages = deque(maxlen=max_stored_messages)
         self._max_message_size = max_message_size
-        self.handshake_rtt_us: int | None = None
-        self.client_rtt_us: int | None = None
+        self.last_response_sent_at: float | None = None
+        self.rtt_samples: deque[int] = deque(maxlen=32)
+        self.min_rtt_us: int | None = None
         self.is_likely_checker: bool | None = None
+
+    def record_rtt_sample(self, gap_us: int, threshold_us: int | None):
+        """Record an inter-request gap (microseconds). Updates min and label."""
+        self.rtt_samples.append(gap_us)
+        if self.min_rtt_us is None or gap_us < self.min_rtt_us:
+            self.min_rtt_us = gap_us
+        if threshold_us is not None and self.min_rtt_us < threshold_us:
+            self.is_likely_checker = True
+        elif threshold_us is not None and self.is_likely_checker is None:
+            self.is_likely_checker = False
 
     def set_current_message(self, data: bytes):
         pass
