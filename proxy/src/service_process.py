@@ -158,8 +158,11 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                 if stream.last_response_sent_at is not None:
                     gap_us = int((time.monotonic() - stream.last_response_sent_at) * 1_000_000)
                     prev_min = stream.min_rtt_us
+                    prev_label = stream.is_likely_checker
                     stream.record_rtt_sample(gap_us, checker_threshold_us)
-                    if prev_min is None or gap_us < prev_min:
+                    new_min_hit = prev_min is None or gap_us < prev_min
+                    label_changed = prev_label != stream.is_likely_checker
+                    if new_min_hit or label_changed:
                         ua = "-"
                         if service.http and getattr(stream, "current_http_message", None) is not None:
                             ua = stream.current_http_message.headers.get("user-agent", "-") or "-"
@@ -168,6 +171,17 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                             f"gap={gap_us}us min={stream.min_rtt_us}us "
                             f"samples={len(stream.rtt_samples)} "
                             f"checker={stream.is_likely_checker} ua={ua!r}"
+                        )
+                    if label_changed:
+                        if stream.is_likely_checker is True:
+                            reason = f"min {stream.min_rtt_us}us < threshold {checker_threshold_us}us"
+                        elif stream.is_likely_checker is False:
+                            reason = f"first sample {gap_us}us >= threshold {checker_threshold_us}us"
+                        else:
+                            reason = "threshold unset"
+                        print(
+                            f"[rtt-classify] {service.name} {peer[0]} "
+                            f"{prev_label}->{stream.is_likely_checker} ({reason})"
                         )
 
                 utils.vprint(b'> > > in\n' + stream.current_message, global_config["verbose"])
