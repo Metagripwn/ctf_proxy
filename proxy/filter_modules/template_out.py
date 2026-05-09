@@ -5,11 +5,15 @@ import re
 class Module():
 
 
-    def block_flag_leak(self, stream: HTTPStream):
+    def block_flag_leak_from_non_checker(self, stream: HTTPStream):
         """
         Block flag leaks if response contains flag pattern [A-Z0-9]{31}=
         and the request did not come from checker user-agent
         """
+        if not isinstance(stream, HTTPStream):
+            return False
+
+
         message = stream.current_http_message  # Current response
         if not message or not stream.previous_http_messages:
             return False
