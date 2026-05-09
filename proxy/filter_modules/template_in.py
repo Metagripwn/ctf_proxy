@@ -3,6 +3,11 @@ from src.stream import Stream, TCPStream, HTTPStream
 
 class Module():
 
+    def accept_encoding(self, stream: HTTPStream):
+        message = stream.current_http_message
+        accept = message.headers.get("accept-encoding", "").lower()
+        return "gzip, deflate" != accept
+
     # INFO: uncomment these functions to enable them
     # This module filters CLIENT → SERVER traffic (incoming requests)
 
