@@ -262,19 +262,21 @@ def restart_services():
     Make sure every service is off and then start them one by one after the proxy
     """
 
-    for service in services_dict:
-        os.system(
-            f"bash -c '!(docker compose --file {services_dict[service]['path']}/docker-compose.yml down) && docker compose --file {services_dict[service]['path']}/docker-compose.yaml down'"
-        )
+    down_cmds = " ".join(
+        f"(!(docker compose --file {services_dict[service]['path']}/docker-compose.yml down) && docker compose --file {services_dict[service]['path']}/docker-compose.yaml down) &"
+        for service in services_dict
+    )
+    os.system(f"bash -c '{down_cmds} wait'")
 
     os.system(
         f"bash -c 'docker compose --file ctf_proxy/docker-compose.yml restart; docker compose --file ctf_proxy/docker-compose.yml up -d'"
     )
 
-    for service in services_dict:
-        os.system(
-            f"bash -c '!(docker compose --file {services_dict[service]['path']}/docker-compose.yml up -d) && docker compose --file {services_dict[service]['path']}/docker-compose.yaml up -d'"
-        )
+    up_cmds = " ".join(
+        f"(!(docker compose --file {services_dict[service]['path']}/docker-compose.yml up -d) && docker compose --file {services_dict[service]['path']}/docker-compose.yaml up -d) &"
+        for service in services_dict
+    )
+    os.system(f"bash -c '{up_cmds} wait'")
 
 
 def main():
