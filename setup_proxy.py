@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import shlex
 import shutil
 
 from pathlib import Path, PosixPath
@@ -15,6 +16,12 @@ Because this one preservs order and comments (and also allows adding them)
 """
 
 blacklist = ["remote_pcap_folder", "caronte", "tulip", "ctf_proxy"]
+compose_filenames = (
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+)
 
 yaml = ruamel.yaml.YAML()
 yaml.preserve_quotes = True
@@ -26,6 +33,21 @@ services_dict = {}
 
 class WrongArgument(Exception):
     pass
+
+
+def find_compose_file(directory):
+    for filename in compose_filenames:
+        file = Path(directory, filename)
+        if file.is_file():
+            return file
+    raise FileNotFoundError(
+        f"No docker compose file found in {directory}. Tried: "
+        + ", ".join(compose_filenames)
+    )
+
+
+def run_bash(command):
+    os.system(f"bash -c {shlex.quote(command)}")
 
 
 def parse_dirs():
@@ -68,9 +90,7 @@ def parse_services():
     global services_dict, dirs
 
     for service in dirs:
-        file = Path(service, "docker-compose.yml")
-        if not file.exists():
-            file = Path(service, "docker-compose.yaml")
+        file = find_compose_file(service)
 
         with open(file, "r") as fs:
             ymlfile = yaml.load(file)
@@ -119,9 +139,7 @@ def edit_services():
     global services_dict
 
     for service in services_dict:
-        file = Path(services_dict[service]["path"], "docker-compose.yml")
-        if not file.exists():
-            file = Path(services_dict[service]["path"], "docker-compose.yaml")
+        file = find_compose_file(services_dict[service]["path"])
 
         with open(file, "r") as fs:
             ymlfile = yaml.load(file)
@@ -212,7 +230,9 @@ def configure_proxy():
     if not Path("./ctf_proxy").exists():
         os.system("git clone https://github.com/Metagripwn/ctf_proxy.git")
 
-    with open("./ctf_proxy/docker-compose.yml", "r") as file:
+    proxy_compose_file = find_compose_file("./ctf_proxy")
+
+    with open(proxy_compose_file, "r") as file:
         ymlfile = yaml.load(file)
 
     # Add all the ports to the compose
@@ -223,7 +243,7 @@ def configure_proxy():
                 ports.append(f"0.0.0.0:{port}:{port}")
     # ymlfile["services"]["proxy"]["ports"] = ports
     ymlfile["services"]["nginx"]["ports"] = ports
-    with open("./ctf_proxy/docker-compose.yml", "w") as fs:
+    with open(proxy_compose_file, "w") as fs:
         yaml.dump(ymlfile, fs)
 
     # Proxy config.json
@@ -262,21 +282,26 @@ def restart_services():
     Make sure every service is off and then start them one by one after the proxy
     """
 
+    def compose_command(service, action):
+        file = shlex.quote(str(find_compose_file(services_dict[service]["path"])))
+        return f"(docker compose --file {file} {action}) &"
+
     down_cmds = " ".join(
-        f"(!(docker compose --file {services_dict[service]['path']}/docker-compose.yml down) && docker compose --file {services_dict[service]['path']}/docker-compose.yaml down) &"
+        compose_command(service, "down")
         for service in services_dict
     )
-    os.system(f"bash -c '{down_cmds} wait'")
+    run_bash(f"{down_cmds} wait")
 
-    os.system(
-        f"bash -c 'docker compose --file ctf_proxy/docker-compose.yml restart; docker compose --file ctf_proxy/docker-compose.yml up -d'"
+    proxy_compose_file = shlex.quote(str(find_compose_file("ctf_proxy")))
+    run_bash(
+        f"docker compose --file {proxy_compose_file} restart; docker compose --file {proxy_compose_file} up -d"
     )
 
     up_cmds = " ".join(
-        f"(!(docker compose --file {services_dict[service]['path']}/docker-compose.yml up -d) && docker compose --file {services_dict[service]['path']}/docker-compose.yaml up -d) &"
+        compose_command(service, "up -d")
         for service in services_dict
     )
-    os.system(f"bash -c '{up_cmds} wait'")
+    run_bash(f"{up_cmds} wait")
 
 
 def main():
