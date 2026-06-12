@@ -3,9 +3,11 @@
 import os
 import sys
 import json
+import re
 import shlex
 import shutil
 
+from collections.abc import Mapping
 from pathlib import Path, PosixPath
 
 import ruamel.yaml  # pip install ruamel.yaml
@@ -48,6 +50,117 @@ def find_compose_file(directory):
 
 def run_bash(command):
     os.system(f"bash -c {shlex.quote(command)}")
+
+
+def split_compose_port_mapping(port_mapping):
+    """Split a Compose short port mapping without splitting inside ${...}."""
+    parts = []
+    current = []
+    brace_depth = 0
+    bracket_depth = 0
+    i = 0
+
+    while i < len(port_mapping):
+        char = port_mapping[i]
+
+        if char == "$" and i + 1 < len(port_mapping) and port_mapping[i + 1] == "{":
+            brace_depth += 1
+            current.append("${")
+            i += 2
+            continue
+
+        if char == "}" and brace_depth:
+            brace_depth -= 1
+            current.append(char)
+            i += 1
+            continue
+
+        if char == "[" and not brace_depth:
+            bracket_depth += 1
+        elif char == "]" and bracket_depth and not brace_depth:
+            bracket_depth -= 1
+
+        if char == ":" and not brace_depth and not bracket_depth:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+
+        i += 1
+
+    parts.append("".join(current))
+    return parts
+
+
+def resolve_compose_interpolation(value):
+    """Resolve simple Docker Compose environment interpolation."""
+    braced_pattern = re.compile(
+        r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:-|:\?|\:\+|-|\?|\+)([^}]*))?\}"
+    )
+    unbraced_pattern = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
+
+    def replace_braced(match):
+        var_name = match.group(1)
+        operator = match.group(2)
+        replacement = match.group(3) or ""
+        env_value = os.environ.get(var_name)
+
+        if operator is None:
+            return env_value if env_value is not None else match.group(0)
+        if operator == ":-":
+            return env_value if env_value else replacement
+        if operator == "-":
+            return env_value if env_value is not None else replacement
+        if operator == ":?":
+            return env_value if env_value else match.group(0)
+        if operator == "?":
+            return env_value if env_value is not None else match.group(0)
+        if operator == ":+":
+            return replacement if env_value else ""
+        if operator == "+":
+            return replacement if env_value is not None else ""
+
+        return match.group(0)
+
+    def replace_unbraced(match):
+        env_value = os.environ.get(match.group(1))
+        return env_value if env_value is not None else match.group(0)
+
+    return unbraced_pattern.sub(replace_unbraced, braced_pattern.sub(replace_braced, value))
+
+
+def normalize_compose_port(port_value):
+    """Return a numeric port after resolving Compose interpolation."""
+    port = str(port_value).strip().strip("\"'")
+    port = port.split("/", 1)[0]
+    port = resolve_compose_interpolation(port).strip()
+    return port if port.isdigit() else None
+
+
+def parse_compose_port_mapping(port_mapping):
+    """Return (target_port, listen_port) from Compose short or long syntax."""
+    if isinstance(port_mapping, Mapping):
+        target = port_mapping.get("target")
+        published = port_mapping.get("published")
+        if target is None or published is None:
+            return None
+
+        target_port = normalize_compose_port(target)
+        listen_port = normalize_compose_port(published)
+        if target_port and listen_port:
+            return target_port, listen_port
+        return None
+
+    port_str = str(port_mapping).strip()
+    port_parts = split_compose_port_mapping(port_str)
+    if len(port_parts) < 2:
+        return None
+
+    target_port = normalize_compose_port(port_parts[-1])
+    listen_port = normalize_compose_port(port_parts[-2])
+    if target_port and listen_port:
+        return target_port, listen_port
+    return None
 
 
 def parse_dirs():
@@ -100,22 +213,31 @@ def parse_services():
         for container in ymlfile["services"]:
             try:
                 ports_string = ymlfile["services"][container]["ports"]
-                ports_list = [p.split(":") for p in ports_string]
+                ports_list = []
+                for port_mapping in ports_string:
+                    parsed_port = parse_compose_port_mapping(port_mapping)
+                    if parsed_port is None:
+                        print(
+                            f"[!] Warning: could not parse published port mapping "
+                            f"{port_mapping!r} for {service.stem}_{container}; skipping"
+                        )
+                        continue
+                    ports_list.append(parsed_port)
 
                 http = []
-                for port in ports_list:
+                for _, listen_port in ports_list:
                     http.append(
                         True
                         if "y"
                         in input(
-                            f"Is the service {service.stem}:{port[-2]} http? [y/N] "
+                            f"Is the service {service.stem}:{listen_port} http? [y/N] "
                         )
                         else False
                     )
 
                 container_dict = {
-                    "target_port": [p[-1] for p in ports_list],
-                    "listen_port": [p[-2] for p in ports_list],
+                    "target_port": [target for target, _ in ports_list],
+                    "listen_port": [listen for _, listen in ports_list],
                     "http": [h for h in http],
                 }
                 services_dict[service.stem]["containers"][container] = container_dict
