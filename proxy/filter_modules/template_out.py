@@ -33,10 +33,13 @@ class Module():
         # Block if both conditions are true
         return has_flag and is_not_checker
 
+
+    """
     def block_flag_leak_from_single_request(self, stream: Stream):
         flag_pattern = rb'[A-Z0-9]{31}='
         has_flag = re.search(flag_pattern, stream.current_message)
         return has_flag and len(stream.previous_messages) <= 2
+    """
 
     # INFO: uncomment these functions to enable them
     # This module filters SERVER → CLIENT traffic (outgoing responses)
