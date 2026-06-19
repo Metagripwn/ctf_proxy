@@ -78,13 +78,15 @@ def receive_from(s: socket.socket, http, verbose=False):
                         break
     return b
 
-def filter_packet(data, filter_module):
+def filter_packet(data, filter_module, filter_name=None):
     if filter_module is not None:
         try:
             attack = filter_module.execute(data)
             if attack is not None:
                 return attack
-        except:
+        except Exception:
+            label = filter_name or getattr(filter_module, "__class__", type(filter_module)).__name__
+            print(f"[filter-error] {label} execute() raised:")
             traceback.print_exc()
     return None
 
