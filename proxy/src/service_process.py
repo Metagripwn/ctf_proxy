@@ -196,7 +196,7 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                         )
 
                 utils.vprint(b'> > > in\n' + stream.current_message, global_config["verbose"])
-                attack = utils.filter_packet(stream, watchdog_handler.in_module)
+                attack = utils.filter_packet(stream, watchdog_handler.in_module, f"{service.name}_in")
                 if not attack:
                     remote_socket.send(stream.current_message)
             else:
@@ -209,7 +209,7 @@ def connection_thread(local_socket: socket.socket, service: Service, global_conf
                     break
 
                 utils.vprint(b'< < < out\n' + stream.current_message, global_config["verbose"])
-                attack = utils.filter_packet(stream, watchdog_handler.out_module)
+                attack = utils.filter_packet(stream, watchdog_handler.out_module, f"{service.name}_out")
                 if not attack:
                     local_socket.send(stream.current_message)
                     stream.last_response_sent_at = time.monotonic()
