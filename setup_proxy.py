@@ -6,6 +6,7 @@ import json
 import re
 import shlex
 import shutil
+import socket
 
 from collections.abc import Mapping
 from pathlib import Path, PosixPath
@@ -163,6 +164,62 @@ def parse_compose_port_mapping(port_mapping):
     return None
 
 
+HTTP_PROBE_REQUEST = (
+    b"GET / HTTP/1.0\r\n"
+    b"Host: localhost\r\n"
+    b"Connection: close\r\n"
+    b"\r\n"
+)
+HTTP_PROBE_TIMEOUT = 2.0
+
+
+def looks_like_tls(data: bytes) -> bool:
+    return len(data) >= 3 and data[0] == 0x16 and data[1] == 0x03
+
+
+def looks_like_http_response(data: bytes) -> bool:
+    return data.startswith(b"HTTP/")
+
+
+def probe_http_service(host: str, port: int, timeout: float = HTTP_PROBE_TIMEOUT):
+    """
+    Probe a listening port with a minimal HTTP request.
+
+    Returns True for plain HTTP, False when the port clearly is not (e.g. TLS),
+    or None when the probe could not decide (service down, timeout, no data).
+    """
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(HTTP_PROBE_REQUEST)
+            data = sock.recv(4096)
+    except (OSError, socket.timeout):
+        return None
+
+    if not data:
+        return None
+    if looks_like_tls(data):
+        return False
+    if looks_like_http_response(data):
+        return True
+    return False
+
+
+def resolve_http_flag(service_name: str, listen_port: int, host: str = "127.0.0.1"):
+    label = f"{service_name}:{listen_port}"
+    detected = probe_http_service(host, listen_port)
+
+    if detected is True:
+        print(f"[*] Detected {label} as HTTP")
+        return True
+    if detected is False:
+        print(f"[*] {label} does not look like plain HTTP; using TCP mode")
+        return False
+
+    print(f"[?] Could not probe {label} (is the service running?)")
+    return "y" in input(f"Is the service {label} http? [y/N] ")
+
+
 def parse_dirs():
     """
     If the user provided arguments use them as paths to find the services.
@@ -224,16 +281,10 @@ def parse_services():
                         continue
                     ports_list.append(parsed_port)
 
-                http = []
-                for _, listen_port in ports_list:
-                    http.append(
-                        True
-                        if "y"
-                        in input(
-                            f"Is the service {service.stem}:{listen_port} http? [y/N] "
-                        )
-                        else False
-                    )
+                http = [
+                    resolve_http_flag(service.stem, listen_port)
+                    for _, listen_port in ports_list
+                ]
 
                 container_dict = {
                     "target_port": [target for target, _ in ports_list],
