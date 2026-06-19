@@ -1,3 +1,5 @@
+import traceback
+
 from src.stream import Stream, TCPStream, HTTPStream
 # from src.db_manager import DBManager
 
@@ -55,6 +57,7 @@ class Module():
             try:
                 if attack(self, stream):
                     return attack.__name__
-            except IndexError:
-                pass
+            except Exception as e:
+                print(f"[filter-error] {attack.__name__}: {type(e).__name__}: {e}")
+                traceback.print_exc()
         return None
