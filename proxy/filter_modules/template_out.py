@@ -6,7 +6,7 @@ import re
 
 class Module():
 
-
+    '''
     def block_flag_leak_from_non_checker(self, stream: HTTPStream):
         """
         Block flag leaks if response contains flag pattern [A-Z0-9]{31}=
@@ -32,6 +32,7 @@ class Module():
 
         # Block if both conditions are true
         return has_flag and is_not_checker
+    '''
 
 
     """
